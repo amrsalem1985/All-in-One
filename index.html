@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<title>Anchor</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Anchor" />
+<meta name="theme-color" content="#14201B" />
+<link rel="apple-touch-icon" href="icons/icon-180.png" />
+<link rel="icon" type="image/png" href="icons/icon-192.png" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- LOCK SCREEN -->
+  <div id="lock-screen">
+    <div class="lock-box">
+      <div class="lock-mark">◆</div>
+      <div id="lock-title" class="lock-title">Enter your PIN</div>
+      <input id="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" class="pin-input" placeholder="••••" />
+      <button id="pin-submit" class="btn-primary lock-submit">Continue</button>
+      <div id="lock-error" class="lock-error"></div>
+    </div>
+  </div>
+
+  <!-- APP SHELL -->
+  <div id="app" class="hidden">
+    <header class="app-header">
+      <span class="app-mark">◆</span>
+      <span class="app-title">Anchor</span>
+    </header>
+    <main id="main-content"></main>
+    <nav id="tab-bar" class="tab-bar"></nav>
+  </div>
+
+  <!-- Core first. shell.js must load before the modules because they call
+       registerModule() at parse time; shell's own boot is deferred to
+       DOMContentLoaded, so it still runs after every module has registered. -->
+  <script src="core/storage.js"></script>
+  <script src="core/utils.js"></script>
+  <script src="core/shell.js"></script>
+
+  <!-- Modules: add one <script> line here per section. -->
+  <script src="modules/finance.js"></script>
+  <script src="modules/family.js"></script>
+  <script src="modules/personal.js"></script>
+  <script src="modules/settings.js"></script>
+</body>
+</html>
