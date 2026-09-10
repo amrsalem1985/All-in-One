@@ -25,6 +25,20 @@ function daysBetween(isoA, isoB) {
   return Math.round((b - a) / 86400000);
 }
 
+// "2026-09-10" -> "Today" / "Yesterday" / "Wed 10 Sep"
+function friendlyDate(iso) {
+  const d = new Date(String(iso) + 'T00:00:00');
+  if (isNaN(d)) return String(iso);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diff = Math.round((today - d) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  const wd = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
+  const mo = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()];
+  return `${wd} ${d.getDate()} ${mo}`;
+}
+
 // "2026-09" -> "Sep 2026"  (also accepts a full "2026-09-14" date)
 function monthLabel(monthKey) {
   const [y, m] = String(monthKey).split('-');

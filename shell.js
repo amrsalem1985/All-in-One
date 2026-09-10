@@ -127,6 +127,8 @@ async function renderActiveModule() {
     b.classList.toggle('active', b.dataset.id === activeModuleId);
   });
   const host = document.getElementById('main-content');
+  const actionSlot = document.getElementById('header-action');
+  if (actionSlot) actionSlot.replaceChildren();   // module fills this during render if it wants
   const mod = window.APP_MODULES.find((m) => m.id === activeModuleId);
   if (!mod) {
     host.replaceChildren();

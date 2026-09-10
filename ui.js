@@ -89,14 +89,15 @@ window.UI = (function () {
   }
 
   // ---- stat group (fixes the wrapping 3-up row) ----------------------
-  /* statGroup([{ label, value, tone }]) -> a .card with evenly divided cells.
+  /* statGroup(items, { bare }) -> a .card with evenly divided cells (or just
+     the .stat-group div when bare, to drop into an existing card).
      Collapses to stacked label/value rows under ~340px (see style.css). */
-  function statGroup(items) {
+  function statGroup(items, opts) {
     const group = el('div', { class: 'stat-group' },
       ...(items || []).map((it) => el('div', { class: 'stat-cell' },
         el('div', { class: 'sg-label', text: it.label }),
         el('div', { class: 'sg-value' + (it.tone ? ' is-' + it.tone : ''), text: String(it.value) }))));
-    return el('div', { class: 'card' }, group);
+    return (opts && opts.bare) ? group : el('div', { class: 'card' }, group);
   }
 
   // ---- empty state --------------------------------------------------

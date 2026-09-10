@@ -495,13 +495,29 @@ input, select, textarea { font-family: inherit; }
 
 .nw-section-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: var(--sp-3);
+  min-height: 30px;
   font-size: var(--fs-body);
   font-weight: var(--fw-semibold);
   margin-bottom: var(--sp-3);
 }
+.nw-head-right { display: flex; align-items: center; gap: var(--sp-3); }
+.section-add {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--gold-hi);
+}
+.section-add svg { width: 16px; height: 16px; display: block; }
+.section-add:active { background: var(--surface-3); }
 .nw-section-total {
   font-family: var(--font-mono);
   font-size: var(--fs-subhead);
@@ -1032,6 +1048,54 @@ input, select, textarea { font-family: inherit; }
 @keyframes toast-in {
   from { opacity: 0; transform: translate(-50%, 10px); }
   to { opacity: 1; transform: translateX(-50%); }
+}
+
+/* ---- Phase 3: Finance ------------------------------------------- */
+
+.header-action button svg { width: 22px; height: 22px; display: block; }
+
+/* Spending — per-day groups */
+.day-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-1);
+}
+.day-date {
+  font-size: var(--fs-footnote);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+}
+.day-total {
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+
+/* History — month picker */
+.month-select {
+  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-medium);
+  padding: 12px 38px 12px 14px;
+  min-height: 44px;
+  margin-bottom: var(--sp-4);
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='none' stroke='%237E9086' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' d='M1 1.5 6 6.5 11 1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+}
+.month-select:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(201, 162, 75, .22);
 }
 
 /* ------------------------------------------------------------ motion ------ */
