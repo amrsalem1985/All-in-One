@@ -6,7 +6,7 @@
    new worker installs, wipes the old cache, and the page reloads itself once
    with the fresh files. */
 
-const CACHE = 'anchor-v5';
+const CACHE = 'anchor-v6';
 
 const ASSETS = [
   './',
@@ -15,6 +15,7 @@ const ASSETS = [
   './manifest.json',
   './core/storage.js',
   './core/utils.js',
+  './core/ui.js',
   './core/shell.js',
   './modules/finance.js',
   './modules/family.js',
