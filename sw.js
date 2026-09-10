@@ -6,7 +6,7 @@
    new worker installs, wipes the old cache, and the page reloads itself once
    with the fresh files. */
 
-const CACHE = 'anchor-v4';
+const CACHE = 'anchor-v5';
 
 const ASSETS = [
   './',

@@ -67,7 +67,7 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 
   /* ---- layout ---- */
-  --tabbar-h: 52px;
+  --tabbar-h: 56px;
   --page-max: 520px;
 }
 
@@ -192,12 +192,41 @@ input, select, textarea { font-family: inherit; }
   text-transform: uppercase;
 }
 
+/* right-side slot in the header — modules drop a "+" / "Edit" button here */
+.header-action {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 32px;
+}
+.header-action:empty { display: none; }
+.header-action button {
+  background: none;
+  border: none;
+  color: var(--gold-hi);
+  font-size: var(--fs-subhead);
+  font-weight: var(--fw-medium);
+  padding: var(--sp-1) var(--sp-2);
+  min-height: 32px;
+}
+
 #main-content {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   padding: var(--sp-4);
   padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + var(--sp-6));
+}
+/* a quiet end-of-content mark so short screens read as finished, not cut off */
+#main-content::after {
+  content: "◆";
+  display: block;
+  text-align: center;
+  color: var(--text-tertiary);
+  opacity: .22;
+  font-size: 13px;
+  padding: var(--sp-8) 0 var(--sp-2);
 }
 
 .tab-bar {
@@ -233,15 +262,20 @@ input, select, textarea { font-family: inherit; }
   padding: var(--sp-2) var(--sp-1) var(--sp-1);
   transition: color .15s;
 }
-.tab-btn:active { color: var(--text-secondary); }
+.tab-btn:active { transform: scale(0.94); }
 .tab-btn.active { color: var(--gold); }
 
 .tab-icon {
-  display: block;
-  font-size: 17px;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
   color: inherit;
 }
+.tab-icon svg { width: 24px; height: 24px; display: block; }
+.tab-icon .tab-glyph { font-size: 17px; line-height: 1; }
+.tab-label { letter-spacing: 0.1px; }
 
 /* --------------------------------------------------------- cards / groups -- */
 
