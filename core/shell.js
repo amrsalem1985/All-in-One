@@ -87,6 +87,16 @@ function unlock(lockScreen, app) {
 
 // ---------- MODULE NAVIGATION ----------
 
+/* Tab-bar icons live here, keyed by module id, so modules stay untouched.
+   24×24, stroke = currentColor. A module with no entry falls back to its
+   own `icon` glyph. */
+const TAB_ICONS = {
+  finance: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16"/><path d="M7.5 19v-6"/><path d="M12 19V8"/><path d="M16.5 19v-4"/><path d="M6 9.5 11 5l3 2.5 4-4.5"/></svg>',
+  family: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3.5 19.5a5.5 5.5 0 0 1 11 0"/><path d="M16.5 6.4a3 3 0 0 1 0 5.7"/><path d="M17.5 14.3a5.5 5.5 0 0 1 3 4.9"/></svg>',
+  personal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.2"/><path d="M5.5 19.5a6.5 6.5 0 0 1 13 0"/></svg>',
+  settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.09A1.65 1.65 0 0 0 10.6 3.09V3a2 2 0 0 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v.09c.2.63.77 1.09 1.51 1.09H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+};
+
 let activeModuleId = null;
 
 function initNav() {
@@ -96,9 +106,12 @@ function initNav() {
   window.APP_MODULES.forEach((m) => {
     const btn = document.createElement('button');
     btn.className = 'tab-btn';
-    btn.innerHTML = `<span class="tab-icon">${m.icon || ''}</span><span>${m.label}</span>`;
+    btn.type = 'button';
     btn.dataset.id = m.id;
+    const icon = TAB_ICONS[m.id] || `<span class="tab-glyph">${m.icon || ''}</span>`;
+    btn.innerHTML = `<span class="tab-icon">${icon}</span><span class="tab-label">${m.label}</span>`;
     btn.addEventListener('click', () => {
+      if (activeModuleId === m.id) return;
       activeModuleId = m.id;
       renderActiveModule();
     });
@@ -106,18 +119,31 @@ function initNav() {
   });
 }
 
-function renderActiveModule() {
+/* Render into a detached node, then swap it in — the module's async render
+   (Storage reads, sub-renders) finishes before anything hits the screen, so
+   there's no "Loading…" flash on tab switches. */
+async function renderActiveModule() {
   document.querySelectorAll('.tab-btn').forEach((b) => {
     b.classList.toggle('active', b.dataset.id === activeModuleId);
   });
+  const host = document.getElementById('main-content');
+  const actionSlot = document.getElementById('header-action');
+  if (actionSlot) actionSlot.replaceChildren();   // module fills this during render if it wants
   const mod = window.APP_MODULES.find((m) => m.id === activeModuleId);
-  const main = document.getElementById('main-content');
   if (!mod) {
-    main.innerHTML = '<div class="loading">No modules registered.</div>';
+    host.replaceChildren();
+    host.insertAdjacentHTML('beforeend', '<div class="loading">No modules registered.</div>');
     return;
   }
-  main.innerHTML = '<div class="loading">Loading…</div>';
-  mod.render(main);
+  const staging = document.createElement('div');
+  try {
+    await mod.render(staging);
+  } catch (e) {
+    console.error('render failed for', mod.id, e);
+    staging.innerHTML = '<div class="loading">Something went wrong loading this screen.</div>';
+  }
+  host.replaceChildren(staging);
+  host.scrollTop = 0;
 }
 
 // ---------- BACKUP (shared by every module, lives in the shell) ----------

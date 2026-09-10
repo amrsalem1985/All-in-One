@@ -15,7 +15,7 @@ async function renderPersonal(container) {
     <div class="subtab-bar">
       <button class="subtab-btn" data-tab="habits">Habits</button>
       <button class="subtab-btn" data-tab="will">My Will</button>
-      <button class="subtab-btn" data-tab="emergency">In Case Of...</button>
+      <button class="subtab-btn" data-tab="emergency">Emergency</button>
     </div>
     <div id="personal-body"></div>
   `;

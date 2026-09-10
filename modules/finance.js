@@ -1,47 +1,56 @@
 /* modules/finance.js
-   Matches notes section 1:
-     A. Daily spending / Monthly overview — Fixed / Variable
-     B. Debits — Loans / Installments
-     C. Assets — Owned / To be owned
-   Everything here is stored under collections prefixed "finance.".
+   Overview / Spending / Net Worth / History. Every collection is prefixed
+   "finance.". Built on the shared UI kit (window.UI): rows, bottom-sheet
+   forms, confirm dialogs, stat groups, charts.
 */
 
 const CURRENCY_DEFAULT = 'AED';
+const SNAPSHOTS = 'finance.networth_snapshots';
 
 const SPEND_CATEGORIES = {
   Fixed: ['Rent', 'Credit Card Payment', 'Gas', 'School Fees', 'School Transport', 'Telephone', 'Car Wash'],
   Variable: ['Food', 'Outing', 'Misc'],
 };
+const ALL_CATEGORIES = [...SPEND_CATEGORIES.Fixed, ...SPEND_CATEGORIES.Variable];
+function catType(cat) {
+  return SPEND_CATEGORIES.Variable.includes(cat) ? 'Variable' : 'Fixed';
+}
 
 const NW_TYPES = [
   { collection: 'finance.assets', label: 'Assets', categories: ['Owned Car', 'Flat (Owned)', 'Flat (Planned)', 'Other'] },
   { collection: 'finance.investments', label: 'Investments', categories: ['Stocks', 'Crypto', 'Fund', 'Other'] },
-  { collection: 'finance.debts', label: 'Debits', categories: ['Loan — Credit Card', 'Loan — Friend', 'Loan — Family', 'Installment', 'Other'] },
+  { collection: 'finance.debts', label: 'Debts', categories: ['Loan — Credit Card', 'Loan — Friend', 'Loan — Family', 'Installment', 'Other'] },
 ];
-
-const SNAPSHOTS = 'finance.networth_snapshots';
 
 let financeSubtab = 'overview';
 
 async function renderFinance(container) {
-  container.innerHTML = `
-    <div class="subtab-bar">
-      <button class="subtab-btn" data-tab="overview">Overview</button>
-      <button class="subtab-btn" data-tab="spending">Spending</button>
-      <button class="subtab-btn" data-tab="networth">Net Worth</button>
-      <button class="subtab-btn" data-tab="history">History</button>
-    </div>
-    <div id="finance-body"></div>
-  `;
-  container.querySelectorAll('.subtab-btn').forEach((b) => {
-    b.classList.toggle('active', b.dataset.tab === financeSubtab);
-    b.addEventListener('click', () => {
-      financeSubtab = b.dataset.tab;
-      renderFinance(container);
-    });
-  });
+  const seg = UI.segmented(
+    [
+      { id: 'overview', label: 'Overview' },
+      { id: 'spending', label: 'Spending' },
+      { id: 'networth', label: 'Net Worth' },
+      { id: 'history', label: 'History' },
+    ],
+    financeSubtab,
+    (id) => { financeSubtab = id; renderFinance(container); },
+  );
+  const body = UI.el('div', { id: 'finance-body' });
+  container.replaceChildren(seg, body);
 
-  const body = container.querySelector('#finance-body');
+  // header "+" only on the tab where you add data
+  const slot = document.getElementById('header-action');
+  if (slot) {
+    slot.replaceChildren();
+    if (financeSubtab === 'spending') {
+      slot.append(UI.el('button', {
+        type: 'button', 'aria-label': 'Add transaction',
+        html: UI.icon('plus'),
+        onClick: () => openTxnSheet(null, body),
+      }));
+    }
+  }
+
   if (financeSubtab === 'overview') return renderFinanceOverview(body);
   if (financeSubtab === 'spending') return renderSpending(body);
   if (financeSubtab === 'networth') return renderNetWorth(body);
@@ -64,9 +73,8 @@ async function computeNetWorth() {
   };
 }
 
-// Runs on every unlock (via the module's onUnlock hook). Keeps exactly one
-// snapshot per calendar day, refreshed to the current number each unlock so the
-// latest figure for "today" is always what's stored.
+// Runs on every unlock (module onUnlock hook). One snapshot per calendar day,
+// refreshed to the current figure each unlock.
 async function recordDailySnapshot() {
   const today = todayISO();
   const nw = await computeNetWorth();
@@ -83,254 +91,262 @@ async function renderFinanceOverview(container) {
     Storage.getAll(SNAPSHOTS),
   ]);
   const nw = await computeNetWorth();
-  const netWorth = nw.value;
 
-  const thisMonth = todayISO().slice(0, 7);
-  const monthTxns = txns.filter((t) => t.date && t.date.startsWith(thisMonth));
-  const fixedTotal = sumByValue(monthTxns.filter((t) => t.type === 'Fixed'));
-  const variableTotal = sumByValue(monthTxns.filter((t) => t.type === 'Variable'));
+  const ym = todayISO().slice(0, 7);
+  const monthTx = txns.filter((t) => t.date && t.date.startsWith(ym));
+  const fixed = sumByValue(monthTx.filter((t) => t.type === 'Fixed'));
+  const variable = sumByValue(monthTx.filter((t) => t.type === 'Variable'));
+
+  container.replaceChildren();
+
+  container.append(UI.el('div', { class: 'card hero-card' },
+    UI.el('div', { class: 'hero-label', text: 'Net Worth' }),
+    UI.el('div', { class: 'hero-value ' + (nw.value >= 0 ? 'positive' : 'negative'), text: fmtMoney(nw.value, currency) })));
+
+  container.append(UI.statGroup([
+    { label: 'This month — Fixed', value: fmtMoney(fixed, currency), tone: 'muted' },
+    { label: 'Variable', value: fmtMoney(variable, currency) },
+    { label: 'Total', value: fmtMoney(fixed + variable, currency), tone: 'negative' },
+  ]));
 
   const series = snapshots
     .map((s) => ({ date: s.date, value: Number(s.value) || 0 }))
     .sort((a, b) => (a.date < b.date ? -1 : 1));
   const chart = sparkline(series, { currency });
-  const historyBody = chart
-    ? `<div class="mini-chart">${chart}</div>`
-    : '<div class="empty-hint">History builds as you use the app — check back in a few days.</div>';
+  container.append(UI.el('div', { class: 'card' },
+    sectionHeader('Net Worth — history'),
+    chart
+      ? UI.el('div', { class: 'mini-chart', html: chart })
+      : UI.el('div', { class: 'empty-hint', text: 'History builds as you use the app — check back in a few days.' })));
 
-  container.innerHTML = `
-    <div class="card hero-card">
-      <div class="hero-label">Net Worth</div>
-      <div class="hero-value ${netWorth >= 0 ? 'positive' : 'negative'}">${fmtMoney(netWorth, currency)}</div>
-    </div>
-    <div class="grid-3">
-      <div class="card stat-card">
-        <div class="stat-label">This month — Fixed</div>
-        <div class="stat-value">${fmtMoney(fixedTotal, currency)}</div>
-      </div>
-      <div class="card stat-card">
-        <div class="stat-label">This month — Variable</div>
-        <div class="stat-value">${fmtMoney(variableTotal, currency)}</div>
-      </div>
-      <div class="card stat-card">
-        <div class="stat-label">This month — Total</div>
-        <div class="stat-value negative">${fmtMoney(fixedTotal + variableTotal, currency)}</div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="nw-section-header"><span>Net Worth — history</span></div>
-      ${historyBody}
-    </div>
-  `;
+  const catCard = UI.el('div', { class: 'card' }, sectionHeader('Top categories — ' + monthLabel(ym)));
+  if (monthTx.length) {
+    const byCat = {};
+    monthTx.forEach((t) => { const k = t.category || 'Other'; byCat[k] = (byCat[k] || 0) + (Number(t.value) || 0); });
+    catCard.append(UI.proportionBars(Object.entries(byCat).map(([label, value]) => ({ label, value })), { currency }));
+  } else {
+    catCard.append(UI.el('div', { class: 'empty-hint', text: 'No spending logged this month yet.' }));
+  }
+  container.append(catCard);
 }
 
 // ---------- SPENDING ----------
 
+function openTxnSheet(existing, body) {
+  UI.openSheet({
+    title: existing ? 'Edit transaction' : 'Add transaction',
+    submitLabel: existing ? 'Save' : 'Add',
+    fields: [
+      { name: 'date', label: 'Date', type: 'date', value: existing?.date || todayISO(), required: true },
+      { name: 'category', label: 'Category', type: 'select', options: ALL_CATEGORIES, value: existing?.category || ALL_CATEGORIES[0] },
+      { name: 'value', label: 'Amount', type: 'number', value: existing?.value ?? '', placeholder: '0', required: true, inputmode: 'decimal' },
+      { name: 'note', label: 'Note', type: 'text', value: existing?.note || '', placeholder: 'Optional' },
+    ],
+    onSubmit: async (v) => {
+      if (!(Number(v.value) > 0)) return 'Amount must be more than zero.';
+      await Storage.put('finance.transactions', {
+        ...(existing || {}),
+        date: v.date, category: v.category, type: catType(v.category),
+        value: Number(v.value), note: v.note,
+      });
+      UI.toast(existing ? 'Updated' : 'Added');
+      renderSpending(body);
+    },
+  });
+}
+
 async function renderSpending(container) {
   const currency = await Storage.getSetting('currency', CURRENCY_DEFAULT);
-  const txns = (await Storage.getAll('finance.transactions')).sort((a, b) => (a.date < b.date ? 1 : -1));
+  const txns = (await Storage.getAll('finance.transactions'))
+    .filter((t) => t.date)
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 
-  container.innerHTML = `
-    <div class="card">
-      <form id="txn-form" class="nw-add-form">
-        <input type="date" class="txn-date" value="${todayISO()}" required />
-        <select class="txn-type">
-          <option value="Fixed">Fixed</option>
-          <option value="Variable">Variable</option>
-        </select>
-        <select class="txn-category"></select>
-        <input type="number" placeholder="Amount" class="txn-amount" required />
-        <input type="text" placeholder="Note (optional)" class="txn-note" />
-        <button type="submit" class="btn-primary">Add transaction</button>
-      </form>
-    </div>
-    <div id="txn-list"></div>
-  `;
+  container.replaceChildren();
 
-  const typeSelect = container.querySelector('.txn-type');
-  const categorySelect = container.querySelector('.txn-category');
-  function refreshCategories() {
-    categorySelect.innerHTML = SPEND_CATEGORIES[typeSelect.value].map((c) => `<option value="${c}">${c}</option>`).join('');
-  }
-  typeSelect.addEventListener('change', refreshCategories);
-  refreshCategories();
-
-  const list = container.querySelector('#txn-list');
   if (!txns.length) {
-    list.innerHTML = '<div class="card"><div class="empty-hint">No transactions yet</div></div>';
-  } else {
-    list.innerHTML = txns.map((t) => `
-      <div class="card nw-row" data-id="${t.id}">
-        <div>
-          <div class="nw-row-name">${escapeHtml(t.category)} <span class="tag">${t.type}</span></div>
-          <div class="nw-row-cat">${escapeHtml(t.date)}${t.note ? ' · ' + escapeHtml(t.note) : ''}</div>
-        </div>
-        <div class="nw-row-value">${fmtMoney(Number(t.value) || 0, currency)}</div>
-        <button class="nw-delete" title="Delete">✕</button>
-      </div>
-    `).join('');
-    list.querySelectorAll('.nw-delete').forEach((btn) => {
-      btn.addEventListener('click', async (e) => {
-        await Storage.remove(e.target.closest('.nw-row').dataset.id);
-        renderSpending(container);
-      });
-    });
+    container.append(UI.el('div', { class: 'card' }, UI.emptyState({
+      icon: 'plus',
+      title: 'No transactions yet',
+      hint: 'Tap + in the top bar to add your first one.',
+      actionLabel: 'Add transaction',
+      onAction: () => openTxnSheet(null, container),
+    })));
+    return;
   }
 
-  container.querySelector('#txn-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const date = container.querySelector('.txn-date').value;
-    const type = typeSelect.value;
-    const category = categorySelect.value;
-    const value = parseFloat(container.querySelector('.txn-amount').value);
-    const note = container.querySelector('.txn-note').value.trim();
-    if (!date || isNaN(value)) return;
-    await Storage.put('finance.transactions', { date, type, category, value, note });
-    renderSpending(container);
-  });
+  const ym = todayISO().slice(0, 7);
+  const monthTx = txns.filter((t) => t.date.startsWith(ym));
+  const mf = sumByValue(monthTx.filter((t) => t.type === 'Fixed'));
+  const mv = sumByValue(monthTx.filter((t) => t.type === 'Variable'));
+  container.append(UI.statGroup([
+    { label: monthLabel(ym) + ' — Fixed', value: fmtMoney(mf, currency), tone: 'muted' },
+    { label: 'Variable', value: fmtMoney(mv, currency) },
+    { label: 'Total', value: fmtMoney(mf + mv, currency), tone: 'negative' },
+  ]));
+
+  const byDay = new Map();
+  txns.forEach((t) => { if (!byDay.has(t.date)) byDay.set(t.date, []); byDay.get(t.date).push(t); });
+
+  for (const [date, rows] of byDay) {
+    container.append(UI.el('div', { class: 'card' },
+      UI.el('div', { class: 'day-head' },
+        UI.el('span', { class: 'day-date', text: friendlyDate(date) }),
+        UI.el('span', { class: 'day-total', text: fmtMoney(sumByValue(rows), currency) })),
+      UI.list(rows.map((t) => UI.listRow({
+        title: t.category,
+        tag: t.type,
+        subtitle: t.note || '',
+        value: fmtMoney(Number(t.value) || 0, currency),
+        onTap: () => openTxnSheet(t, container),
+        actions: [{
+          icon: 'trash', label: 'Delete', danger: true,
+          onClick: async () => {
+            const ok = await UI.confirmDialog({
+              title: 'Delete this transaction?',
+              message: `${t.category} · ${fmtMoney(Number(t.value) || 0, currency)}`,
+            });
+            if (ok) { await Storage.remove(t.id); UI.toast('Deleted'); renderSpending(container); }
+          },
+        }],
+      })))));
+  }
 }
 
 // ---------- NET WORTH ----------
 
+function openNwSheet(typeDef, existing, container) {
+  UI.openSheet({
+    title: existing ? `Edit — ${typeDef.label}` : `Add — ${typeDef.label}`,
+    submitLabel: existing ? 'Save' : 'Add',
+    fields: [
+      { name: 'name', label: 'Name', type: 'text', value: existing?.name || '', required: true, placeholder: typeDef.label === 'Debts' ? 'e.g. Car loan' : 'e.g. Flat' },
+      { name: 'category', label: 'Category', type: 'select', options: typeDef.categories, value: existing?.category || typeDef.categories[0] },
+      { name: 'value', label: 'Value', type: 'number', value: existing?.value ?? '', required: true, inputmode: 'decimal', placeholder: '0' },
+    ],
+    onSubmit: async (v) => {
+      if (!(Number(v.value) >= 0)) return 'Value cannot be negative.';
+      await Storage.put(typeDef.collection, {
+        ...(existing || {}),
+        name: v.name, category: v.category, value: Number(v.value), updatedAt: new Date().toISOString(),
+      });
+      UI.toast(existing ? 'Updated' : 'Added');
+      renderNetWorth(container);
+    },
+  });
+}
+
 async function renderNetWorth(container) {
   const currency = await Storage.getSetting('currency', CURRENCY_DEFAULT);
-  container.innerHTML = '<div id="nw-sections"></div>';
-  const wrap = container.querySelector('#nw-sections');
+  const nw = await computeNetWorth();
+
+  container.replaceChildren();
+  container.append(UI.el('div', { class: 'card hero-card' },
+    UI.el('div', { class: 'hero-label', text: 'Net Worth' }),
+    UI.el('div', { class: 'hero-value ' + (nw.value >= 0 ? 'positive' : 'negative'), text: fmtMoney(nw.value, currency) })));
 
   for (const typeDef of NW_TYPES) {
-    const records = await Storage.getAll(typeDef.collection);
-    const section = document.createElement('div');
-    section.className = 'card nw-section';
-    section.innerHTML = `
-      <div class="nw-section-header">
-        <span>${typeDef.label}</span>
-        <span class="nw-section-total">${fmtMoney(sumByValue(records), currency)}</span>
-      </div>
-      <div class="nw-list">
-        ${records.length ? records.map((r) => `
-          <div class="nw-row" data-id="${r.id}">
-            <div>
-              <div class="nw-row-name">${escapeHtml(r.name)}</div>
-              <div class="nw-row-cat">${escapeHtml(r.category)}</div>
-            </div>
-            <div class="nw-row-value">${fmtMoney(Number(r.value) || 0, currency)}</div>
-            <button class="nw-delete" title="Delete">✕</button>
-          </div>
-        `).join('') : '<div class="empty-hint">Nothing added yet</div>'}
-      </div>
-      <form class="nw-add-form">
-        <input type="text" placeholder="Name" class="nw-name" required />
-        <select class="nw-category">
-          ${typeDef.categories.map((c) => `<option value="${c}">${c}</option>`).join('')}
-        </select>
-        <input type="number" placeholder="Value" class="nw-value" required />
-        <button type="submit" class="btn-primary">Add</button>
-      </form>
-    `;
-    wrap.appendChild(section);
+    const records = (await Storage.getAll(typeDef.collection))
+      .sort((a, b) => (Number(b.value) || 0) - (Number(a.value) || 0));
+    const total = sumByValue(records);
 
-    section.querySelector('.nw-add-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const name = section.querySelector('.nw-name').value.trim();
-      const category = section.querySelector('.nw-category').value;
-      const value = parseFloat(section.querySelector('.nw-value').value);
-      if (!name || isNaN(value)) return;
-      await Storage.put(typeDef.collection, { name, category, value, updatedAt: new Date().toISOString() });
-      renderNetWorth(container);
-    });
+    const header = UI.el('div', { class: 'nw-section-header' },
+      UI.el('span', { text: typeDef.label }),
+      UI.el('div', { class: 'nw-head-right' },
+        UI.el('span', { class: 'nw-section-total', text: fmtMoney(total, currency) }),
+        UI.el('button', {
+          class: 'section-add', type: 'button', 'aria-label': 'Add to ' + typeDef.label,
+          html: UI.icon('plus'),
+          onClick: () => openNwSheet(typeDef, null, container),
+        })));
 
-    section.querySelectorAll('.nw-delete').forEach((btn) => {
-      btn.addEventListener('click', async (e) => {
-        await Storage.remove(e.target.closest('.nw-row').dataset.id);
-        renderNetWorth(container);
-      });
-    });
+    const bodyEl = records.length
+      ? UI.list(records.map((r) => UI.listRow({
+          title: r.name,
+          subtitle: r.category,
+          value: fmtMoney(Number(r.value) || 0, currency),
+          tone: typeDef.label === 'Debts' ? 'negative' : undefined,
+          onTap: () => openNwSheet(typeDef, r, container),
+          actions: [{
+            icon: 'trash', label: 'Delete', danger: true,
+            onClick: async () => {
+              const ok = await UI.confirmDialog({
+                title: `Delete “${r.name}”?`,
+                message: 'This removes it from your net worth.',
+              });
+              if (ok) { await Storage.remove(r.id); UI.toast('Deleted'); renderNetWorth(container); }
+            },
+          }],
+        })))
+      : UI.emptyState({ title: 'Nothing added', hint: `Tap + to add ${typeDef.label.toLowerCase()}.` });
+
+    container.append(UI.el('div', { class: 'card nw-section' }, header, bodyEl));
   }
 }
 
-// ---------- HISTORY (past months + Fixed vs Variable trend) ----------
+// ---------- HISTORY ----------
 
-let historyMonth = null; // selected month key, e.g. "2026-09"
+let historyMonth = null;
 
 async function renderFinanceHistory(container) {
   const currency = await Storage.getSetting('currency', CURRENCY_DEFAULT);
   const txns = await Storage.getAll('finance.transactions');
 
+  container.replaceChildren();
+
   if (!txns.length) {
-    container.innerHTML = '<div class="card"><div class="empty-hint">No transactions yet — add some on the Spending tab.</div></div>';
+    container.append(UI.el('div', { class: 'card' }, UI.emptyState({
+      title: 'No history yet',
+      hint: 'Add transactions on the Spending tab to see trends here.',
+    })));
     return;
   }
 
-  // group by month key
   const byMonth = {};
   txns.forEach((t) => {
     if (!t.date) return;
-    const key = t.date.slice(0, 7);
-    (byMonth[key] || (byMonth[key] = [])).push(t);
+    const k = t.date.slice(0, 7);
+    (byMonth[k] || (byMonth[k] = [])).push(t);
   });
   const monthsDesc = Object.keys(byMonth).sort().reverse();
   if (!historyMonth || !byMonth[historyMonth]) historyMonth = monthsDesc[0];
 
-  // trend: last up-to-12 months, oldest -> newest
-  const trendRows = monthsDesc.slice(0, 12).reverse().map((key) => {
-    const rows = byMonth[key];
-    return {
-      label: monthLabel(key),
-      a: sumByValue(rows.filter((t) => t.type === 'Fixed')),
-      b: sumByValue(rows.filter((t) => t.type === 'Variable')),
-    };
-  });
-  const trendSvg = groupedBars(trendRows, {
-    currency, aLabel: 'Fixed', bLabel: 'Variable',
-    aColor: 'var(--gold)', bColor: 'var(--sage)',
-  });
+  const trendRows = monthsDesc.slice(0, 12).reverse().map((k) => ({
+    label: monthLabel(k),
+    a: sumByValue(byMonth[k].filter((t) => t.type === 'Fixed')),
+    b: sumByValue(byMonth[k].filter((t) => t.type === 'Variable')),
+  }));
+  container.append(UI.el('div', { class: 'card' },
+    sectionHeader(`Fixed vs Variable — last ${trendRows.length} month${trendRows.length === 1 ? '' : 's'}`),
+    UI.el('div', { class: 'mini-chart', html: groupedBars(trendRows, {
+      currency, aLabel: 'Fixed', bLabel: 'Variable', aColor: 'var(--gold)', bColor: 'var(--sage)',
+    }) })));
 
-  // selected-month breakdown
-  const monthRows = byMonth[historyMonth].slice().sort((a, b) => (a.date < b.date ? 1 : -1));
-  const fixedTotal = sumByValue(monthRows.filter((t) => t.type === 'Fixed'));
-  const variableTotal = sumByValue(monthRows.filter((t) => t.type === 'Variable'));
+  const sel = UI.el('select', { class: 'month-select', 'aria-label': 'Month' },
+    ...monthsDesc.map((k) => UI.el('option', { value: k, text: monthLabel(k), selected: k === historyMonth })));
+  sel.addEventListener('change', () => { historyMonth = sel.value; renderFinanceHistory(container); });
 
-  const byCategory = {};
-  monthRows.forEach((t) => {
-    const k = `${t.type} · ${t.category}`;
-    byCategory[k] = (byCategory[k] || 0) + (Number(t.value) || 0);
-  });
-  const catRows = Object.entries(byCategory).sort((a, b) => b[1] - a[1]);
+  const mrows = byMonth[historyMonth];
+  const mf = sumByValue(mrows.filter((t) => t.type === 'Fixed'));
+  const mv = sumByValue(mrows.filter((t) => t.type === 'Variable'));
+  container.append(UI.el('div', { class: 'card' },
+    sel,
+    UI.statGroup([
+      { label: 'Fixed', value: fmtMoney(mf, currency), tone: 'muted' },
+      { label: 'Variable', value: fmtMoney(mv, currency) },
+      { label: 'Total', value: fmtMoney(mf + mv, currency), tone: 'negative' },
+    ], { bare: true })));
 
-  container.innerHTML = `
-    <div class="card">
-      <div class="nw-section-header"><span>Fixed vs Variable — last ${trendRows.length} month${trendRows.length === 1 ? '' : 's'}</span></div>
-      ${trendSvg ? `<div class="mini-chart">${trendSvg}</div>` : '<div class="empty-hint">Not enough data yet.</div>'}
-    </div>
-    <div class="card">
-      <form class="nw-add-form" style="border-top:none;padding-top:0;">
-        <select id="history-month">
-          ${monthsDesc.map((k) => `<option value="${k}" ${k === historyMonth ? 'selected' : ''}>${monthLabel(k)}</option>`).join('')}
-        </select>
-      </form>
-      <div class="grid-3" style="margin-top:12px;margin-bottom:0;">
-        <div class="stat-card"><div class="stat-label">Fixed</div><div class="stat-value">${fmtMoney(fixedTotal, currency)}</div></div>
-        <div class="stat-card"><div class="stat-label">Variable</div><div class="stat-value">${fmtMoney(variableTotal, currency)}</div></div>
-        <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value negative">${fmtMoney(fixedTotal + variableTotal, currency)}</div></div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="nw-section-header"><span>${escapeHtml(monthLabel(historyMonth))} — by category</span></div>
-      <div class="nw-list">
-        ${catRows.map(([name, val]) => `
-          <div class="nw-row">
-            <div><div class="nw-row-name">${escapeHtml(name)}</div></div>
-            <div class="nw-row-value">${fmtMoney(val, currency)}</div>
-          </div>
-        `).join('')}
-      </div>
-    </div>
-  `;
+  const byCat = {};
+  mrows.forEach((t) => { const k = t.category || 'Other'; byCat[k] = (byCat[k] || 0) + (Number(t.value) || 0); });
+  container.append(UI.el('div', { class: 'card' },
+    sectionHeader(monthLabel(historyMonth) + ' — by category'),
+    UI.proportionBars(Object.entries(byCat).map(([label, value]) => ({ label, value })), { currency })));
+}
 
-  container.querySelector('#history-month').addEventListener('change', (e) => {
-    historyMonth = e.target.value;
-    renderFinanceHistory(container);
-  });
+// ---------- shared ----------
+
+function sectionHeader(text) {
+  return UI.el('div', { class: 'nw-section-header' }, UI.el('span', { text }));
 }
 
 registerModule({
