@@ -50,17 +50,23 @@ window.UI = (function () {
   /* listRow({ title, subtitle, value, tone, tag, onTap, actions })
      tone     : 'positive' | 'negative' | 'muted' — colours the value
      tag      : small pill after the title
-     onTap    : whole row becomes a button (shows a chevron)
+     onTap    : whole row becomes a button (chevron unless `trailing` is set)
+     leading  : element shown before the title (e.g. an avatar chip)
+     trailing : element shown on the right (e.g. a button); its clicks don't
+                trigger onTap
      actions  : [{ icon:'trash'|'pencil'|..., label, danger, onClick }] */
   function listRow(o) {
     o = o || {};
-    const titleEl = el('div', { class: 'lr-title' }, o.title != null ? String(o.title) : '',
+    const titleEl = el('div', { class: 'lr-title' },
+      el('span', { class: 'lr-title-text', text: o.title != null ? String(o.title) : '' }),
       o.tag ? el('span', { class: 'lr-tag', text: o.tag }) : null);
     const main = el('div', { class: 'lr-main' }, titleEl,
       o.subtitle ? el('div', { class: 'lr-sub', text: o.subtitle }) : null);
 
+    const showChevron = o.onTap && !o.trailing;
     const right = el('div', { class: 'lr-right' },
       o.value != null ? el('div', { class: 'lr-value' + (o.tone ? ' is-' + o.tone : ''), text: String(o.value) }) : null,
+      o.trailing ? el('div', { class: 'lr-trailing', onClick: (e) => e.stopPropagation() }, o.trailing) : null,
       ...((o.actions || []).map((a) => el('button', {
         class: 'lr-action' + (a.danger ? ' is-danger' : ''),
         type: 'button',
@@ -69,9 +75,10 @@ window.UI = (function () {
         html: a.icon ? icon(a.icon) : (a.label || ''),
         onClick: (e) => { e.stopPropagation(); a.onClick && a.onClick(e); },
       }))),
-      o.onTap ? el('span', { class: 'lr-chevron', html: ICON.chevron }) : null);
+      showChevron ? el('span', { class: 'lr-chevron', html: ICON.chevron }) : null);
 
-    const row = el('div', { class: 'list-row' + (o.onTap ? ' is-tappable' : '') }, main, right);
+    const row = el('div', { class: 'list-row' + (o.onTap ? ' is-tappable' : '') },
+      o.leading ? el('div', { class: 'lr-leading' }, o.leading) : null, main, right);
     if (o.onTap) {
       row.tabIndex = 0;
       row.setAttribute('role', 'button');
@@ -203,13 +210,17 @@ window.UI = (function () {
   }
 
   // ---- bottom sheet with a form --------------------------------
-  /* openSheet({ title, fields, submitLabel, values, onSubmit })
+  /* openSheet({ title, fields, submitLabel, onSubmit, extra, onDelete,
+                deleteLabel, deleteConfirm })
      fields: [{ name, label, type, placeholder, required, options, min, step,
                 inputmode, rows }]
        type: 'text' | 'number' | 'date' | 'select' | 'textarea'
        options: ['A','B'] or [{ value, label }]
      onSubmit(valuesObject): return/throw a string -> shown as error, stays open.
        Anything else (incl. a Promise resolving falsy) -> closes.
+     extra: an element rendered below the fields (e.g. a read-only log).
+     onDelete: if set, adds a destructive button; runs deleteConfirm (a
+       confirmDialog opts object) first, then onDelete(), then closes.
      Returns a close() function. */
   function openSheet(o) {
     o = o || {};
@@ -275,10 +286,22 @@ window.UI = (function () {
     const form = el('form', {
       class: 'ui-form',
       onSubmit: (e) => { e.preventDefault(); submit(); },
-    }, ...fieldEls, errEl,
+    }, ...fieldEls,
+      o.extra || null,
+      errEl,
       el('div', { class: 'sheet-actions' },
         el('button', { class: 'btn-primary', type: 'submit', text: o.submitLabel || 'Save' }),
-        el('button', { class: 'btn-secondary', type: 'button', text: 'Cancel', onClick: () => close() })));
+        el('button', { class: 'btn-secondary', type: 'button', text: 'Cancel', onClick: () => close() })),
+      o.onDelete ? el('button', {
+        class: 'btn-plain sheet-delete', type: 'button',
+        text: o.deleteLabel || 'Delete',
+        onClick: async () => {
+          const ok = await confirmDialog(o.deleteConfirm || { title: 'Delete this?', message: 'This cannot be undone.' });
+          if (!ok) return;
+          try { await o.onDelete(); close(); }
+          catch (e) { showErr(e && e.message ? e.message : String(e)); }
+        },
+      }) : null);
 
     const sheet = el('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': o.title || 'Form' },
       el('div', { class: 'sheet-grip' }),
