@@ -40,6 +40,7 @@
   <!-- Core first. shell.js must load before the modules because they call
        registerModule() at parse time; shell's own boot is deferred to
        DOMContentLoaded, so it still runs after every module has registered. -->
+  <script src="core/version.js"></script>
   <script src="core/storage.js"></script>
   <script src="core/utils.js"></script>
   <script src="core/ui.js"></script>

@@ -6,13 +6,14 @@
    new worker installs, wipes the old cache, and the page reloads itself once
    with the fresh files. */
 
-const CACHE = 'anchor-v8';
+const CACHE = 'anchor-v11';
 
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './manifest.json',
+  './core/version.js',
   './core/storage.js',
   './core/utils.js',
   './core/ui.js',
@@ -30,6 +31,15 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting())
   );
+});
+
+// Lets the app show which build the worker is serving (Settings → About).
+self.addEventListener('message', (event) => {
+  if (event.data === 'version') {
+    const reply = { type: 'version', cache: CACHE };
+    if (event.ports && event.ports[0]) event.ports[0].postMessage(reply);
+    else if (event.source) event.source.postMessage(reply);
+  }
 });
 
 self.addEventListener('activate', (event) => {

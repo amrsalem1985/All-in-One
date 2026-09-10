@@ -45,7 +45,49 @@ async function renderSettings(container) {
       </div>
       <div class="save-hint" id="backup-hint"></div>
     </div>
+
+    <div class="card">
+      <div class="placeholder-title">Storage &amp; data</div>
+      <div class="about-row"><span>On-device size</span><span class="about-val" id="storage-size">—</span></div>
+      <div class="about-row"><span>Protected from cleanup</span><span class="about-val" id="storage-persist">—</span></div>
+      <div class="placeholder-body">Everything is stored only in this app on this phone. Export a backup before erasing.</div>
+      <div class="settings-btn-row">
+        <button id="erase-btn" class="btn-secondary btn-destructive">Erase all data</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="placeholder-title">About</div>
+      <div class="about-row"><span>Build</span><span class="about-val" id="about-build">—</span></div>
+      <div class="about-row"><span>Offline cache</span><span class="about-val" id="about-cache">checking…</span></div>
+      <div class="placeholder-body">This should match the <code>CACHE</code> line in <code>&lt;your-site&gt;/sw.js</code>. If it doesn't, the phone is still on an older build.</div>
+      <div class="settings-btn-row">
+        <button id="update-btn" class="btn-secondary">Check for update</button>
+      </div>
+      <div class="save-hint" id="about-hint"></div>
+    </div>
   `;
+
+  // ---- about / version ----
+  container.querySelector('#about-build').textContent = window.APP_BUILD || 'unknown';
+  askServiceWorkerVersion().then((cache) => {
+    const el = container.querySelector('#about-cache');
+    if (el) el.textContent = cache || 'not active';
+  });
+  const aboutHint = container.querySelector('#about-hint');
+  container.querySelector('#update-btn').addEventListener('click', async () => {
+    aboutHint.style.color = '';
+    aboutHint.textContent = 'Checking…';
+    try {
+      const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+      if (reg) await reg.update();
+      // If an update was found, shell.js reloads the page on controllerchange.
+      aboutHint.textContent = 'Checked. If a new build is deploying, fully close and reopen the app.';
+    } catch (e) {
+      aboutHint.style.color = 'var(--rust)';
+      aboutHint.textContent = 'Could not check: ' + (e && e.message ? e.message : e);
+    }
+  });
 
   // ---- currency ----
   const curHint = container.querySelector('#currency-hint');
@@ -99,6 +141,50 @@ async function renderSettings(container) {
       backupHint.style.color = isError ? 'var(--rust)' : 'var(--sage)';
       backupHint.textContent = msg;
     });
+  });
+
+  // ---- storage & data ----
+  (async () => {
+    const sizeEl = container.querySelector('#storage-size');
+    const persistEl = container.querySelector('#storage-persist');
+    try {
+      const est = navigator.storage && navigator.storage.estimate && await navigator.storage.estimate();
+      sizeEl.textContent = est && est.usage != null ? formatBytes(est.usage) : 'unknown';
+    } catch (e) { sizeEl.textContent = 'unknown'; }
+    try {
+      const p = navigator.storage && navigator.storage.persisted && await navigator.storage.persisted();
+      persistEl.textContent = p === true ? 'Yes' : p === false ? 'No' : 'unknown';
+    } catch (e) { persistEl.textContent = 'unknown'; }
+  })();
+
+  container.querySelector('#erase-btn').addEventListener('click', async () => {
+    const ok1 = await UI.confirmDialog({
+      title: 'Erase all data?',
+      message: 'Everything in Anchor — finances, family, will, emergency instructions — will be deleted from this phone.',
+      confirmLabel: 'Continue',
+    });
+    if (!ok1) return;
+    const ok2 = await UI.confirmDialog({
+      title: 'Really erase everything?',
+      message: 'There is no undo and no cloud copy. Make sure you exported a backup first.',
+      confirmLabel: 'Erase everything',
+    });
+    if (!ok2) return;
+    await Storage.clearAll();
+    location.reload();
+  });
+}
+
+// Ask the active service worker which CACHE it's serving. Resolves null when
+// there's no controller (first load, private window, or the in-app preview).
+function askServiceWorkerVersion() {
+  return new Promise((resolve) => {
+    const sw = navigator.serviceWorker;
+    if (!sw || !sw.controller) { resolve(null); return; }
+    const ch = new MessageChannel();
+    const t = setTimeout(() => resolve(null), 600);
+    ch.port1.onmessage = (e) => { clearTimeout(t); resolve((e.data && e.data.cache) || null); };
+    sw.controller.postMessage('version', [ch.port2]);
   });
 }
 

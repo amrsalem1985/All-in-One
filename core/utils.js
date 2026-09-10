@@ -9,6 +9,12 @@ function sumByValue(records) {
   return records.reduce((t, r) => t + (Number(r.value) || 0), 0);
 }
 
+function formatBytes(n) {
+  if (!n || n < 1024) return (n || 0) + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  return (n / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
 function escapeHtml(str) {
   const d = document.createElement('div');
   d.textContent = str == null ? '' : String(str);
@@ -37,6 +43,25 @@ function friendlyDate(iso) {
   const wd = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
   const mo = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()];
   return `${wd} ${d.getDate()} ${mo}`;
+}
+
+// "2026-09-10" -> "Wed 10 Sep" (always, no "Today")
+function weekdayLabel(iso) {
+  const d = new Date(String(iso) + 'T00:00:00');
+  if (isNaN(d)) return String(iso);
+  const wd = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
+  const mo = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()];
+  return `${wd} ${d.getDate()} ${mo}`;
+}
+
+// ISO timestamp -> "Today 14:32" / "Wed 10 Sep 14:32" (local)
+function friendlyDateTime(isoTs) {
+  const d = new Date(isoTs);
+  if (isNaN(d)) return '';
+  const localIso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${friendlyDate(localIso)} ${hh}:${mm}`;
 }
 
 // "2026-09" -> "Sep 2026"  (also accepts a full "2026-09-14" date)

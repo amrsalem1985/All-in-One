@@ -19,6 +19,9 @@ function registerModule(def) {
 // ---------- PIN LOCK ----------
 // sha256() lives in core/utils.js (loaded before this file) so modules can reuse it.
 
+const MAX_PIN_FAILS = 5;      // wrong tries before a cooldown
+const PIN_LOCK_MS = 30000;    // cooldown length
+
 async function initLock() {
   const storedHash = await Storage.getSetting('pin_hash');
   const lockScreen = document.getElementById('lock-screen');
@@ -31,52 +34,131 @@ async function initLock() {
   const isFirstRun = !storedHash;
   title.textContent = isFirstRun ? 'Set a PIN to protect this app' : 'Enter your PIN';
 
+  // "Clear" affordance — shown only when the field has something in it.
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'pin-clear';
+  clearBtn.textContent = 'Clear';
+  clearBtn.hidden = true;
+  clearBtn.addEventListener('click', () => {
+    input.value = '';
+    clearBtn.hidden = true;
+    input.focus();
+  });
+  input.insertAdjacentElement('afterend', clearBtn);
+
   let confirmStage = null;
+  let busy = false;
+  let lockTimer = null;
+  let autoTimer = null;
 
-  submit.addEventListener('click', async () => {
-    const val = input.value.trim();
-    if (val.length < 4) {
-      error.textContent = 'PIN must be at least 4 digits';
-      return;
-    }
+  async function lockedUntil() {
+    const until = Number(await Storage.getSetting('pin_lock_until', 0));
+    return until > Date.now() ? until : 0;
+  }
 
-    if (isFirstRun) {
-      if (!confirmStage) {
-        confirmStage = val;
-        input.value = '';
-        title.textContent = 'Confirm your PIN';
+  function runCountdown(until) {
+    clearInterval(lockTimer);
+    input.disabled = true;
+    submit.disabled = true;
+    const tick = () => {
+      const left = Math.ceil((until - Date.now()) / 1000);
+      if (left <= 0) {
+        clearInterval(lockTimer);
+        input.disabled = false;
+        submit.disabled = false;
         error.textContent = '';
+        input.focus();
+      } else {
+        error.textContent = `Too many attempts. Try again in ${left}s.`;
+      }
+    };
+    tick();
+    lockTimer = setInterval(tick, 1000);
+  }
+
+  if (!isFirstRun) {
+    const until = await lockedUntil();
+    if (until) runCountdown(until);
+  }
+
+  async function attempt() {
+    if (busy || input.disabled) return;
+    const val = input.value.trim();
+    if (val.length < 4) { error.textContent = 'PIN must be at least 4 digits'; return; }
+    busy = true;
+    try {
+      if (isFirstRun) {
+        if (!confirmStage) {
+          confirmStage = val;
+          input.value = ''; clearBtn.hidden = true;
+          title.textContent = 'Confirm your PIN';
+          error.textContent = '';
+          return;
+        }
+        if (val !== confirmStage) {
+          error.textContent = "PINs didn't match — start over";
+          confirmStage = null;
+          input.value = ''; clearBtn.hidden = true;
+          title.textContent = 'Set a PIN to protect this app';
+          return;
+        }
+        await Storage.setSetting('pin_hash', await sha256(val));
+        unlock(lockScreen, app);
         return;
       }
-      if (val !== confirmStage) {
-        error.textContent = "PINs didn't match — start over";
-        confirmStage = null;
-        input.value = '';
-        title.textContent = 'Set a PIN to protect this app';
+
+      if (await lockedUntil()) return;
+      const ok = (await sha256(val)) === storedHash;
+      input.value = ''; clearBtn.hidden = true;
+      if (ok) {
+        await Storage.setSetting('pin_fails', 0);
+        await Storage.setSetting('pin_lock_until', 0);
+        unlock(lockScreen, app);
         return;
       }
-      await Storage.setSetting('pin_hash', await sha256(val));
-      unlock(lockScreen, app);
-      return;
+      const fails = Number(await Storage.getSetting('pin_fails', 0)) + 1;
+      if (fails >= MAX_PIN_FAILS) {
+        const until = Date.now() + PIN_LOCK_MS;
+        await Storage.setSetting('pin_fails', 0);
+        await Storage.setSetting('pin_lock_until', until);
+        runCountdown(until);
+      } else {
+        await Storage.setSetting('pin_fails', fails);
+        error.textContent = `Incorrect PIN — ${MAX_PIN_FAILS - fails} ${MAX_PIN_FAILS - fails === 1 ? 'try' : 'tries'} left`;
+      }
+    } finally {
+      busy = false;
     }
+  }
 
-    const hash = await sha256(val);
-    if (hash === storedHash) {
-      unlock(lockScreen, app);
-    } else {
-      error.textContent = 'Incorrect PIN';
-      input.value = '';
-    }
+  submit.addEventListener('click', attempt);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') attempt(); });
+  input.addEventListener('input', () => {
+    clearBtn.hidden = !input.value;
+    if (isFirstRun) return;
+    // returning user: submit on its own once 4+ digits are in and typing pauses
+    clearTimeout(autoTimer);
+    if (input.value.trim().length >= 4) autoTimer = setTimeout(attempt, 350);
   });
 
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') submit.click();
-  });
+  input.focus();
+}
+
+// Ask the browser to keep this app's storage from being evicted under pressure.
+// Idempotent; unsupported on some engines — best effort.
+function requestPersistentStorage() {
+  try {
+    if (navigator.storage && navigator.storage.persist && navigator.storage.persisted) {
+      navigator.storage.persisted().then((already) => { if (!already) navigator.storage.persist(); });
+    }
+  } catch (e) { /* not supported */ }
 }
 
 function unlock(lockScreen, app) {
   lockScreen.classList.add('hidden');
   app.classList.remove('hidden');
+  requestPersistentStorage();
   // Fire a generic per-module lifecycle hook. The shell doesn't know what any
   // module does with it — Finance uses it to record a daily net-worth snapshot.
   window.APP_MODULES.forEach((m) => {
@@ -185,10 +267,12 @@ function doImport(onStatus) {
         return;
       }
       const count = dump.docs.length;
-      if (!confirm(`Replace ALL current data with this backup (${count} records)?\n\nThis cannot be undone.`)) {
-        report('Restore cancelled.', false);
-        return;
-      }
+      const ok = await UI.confirmDialog({
+        title: 'Restore from backup?',
+        message: `This replaces everything currently in the app with the ${count} records in this file. It cannot be undone.`,
+        confirmLabel: 'Replace all data',
+      });
+      if (!ok) { report('Restore cancelled.', false); return; }
       try {
         report('Restoring…', false);
         await Storage.clearAll();
